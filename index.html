@@ -66,12 +66,27 @@
             width: 100%; height: 100%; border: none; text-align: center;
             font-size: 1rem; font-weight: bold; background-color: #2c3e50; color: #fff;
         }
+    .distribution-select { width: 100%; height: 100%; border: none; background: #2c3e50; color: #fff; font-weight: bold; text-align: center; }
+    .distribution-select option { background: #2c3e50; color: #fff; }
+    .distribution-label { font-size: 0.85rem; color: #ddd; margin-left: 6px; }
         #dist-total { font-weight: bold; }
         #dist-total.error { color: #ff6b6b; }
         .controls button {
             width: 100%; padding: 0.8rem; font-size: 1.1rem; border: none; border-radius: 8px;
             color: white; cursor: pointer; font-weight: bold; background-color: var(--accent-green);
         }
+        /* Row layout for primary actions (save / tweet) */
+        .action-row { display:flex; gap:10px; }
+        .action-row > button, .action-row > .twitter-share-button {
+            flex: 1 1 0; display: inline-flex; align-items: center; justify-content: center;
+            padding: 0.95rem 1.2rem; font-size: 1.15rem; border-radius: 10px; text-decoration: none; color: white;
+            font-weight: 700; border: none; cursor: pointer; min-height: 48px;
+        }
+        .action-row > button { background-color: var(--accent-green); }
+    .action-row > .twitter-share-button { background-color: #1da1f2; }
+    /* Slightly increase Twitter button prominence while preserving shape */
+    .twitter-share-button { box-shadow: 0 2px 6px rgba(29,161,242,0.12); }
+        .twitter-share-button:hover { opacity: 0.95; }
         .modal-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.7); display: none; justify-content: center; align-items: center;
@@ -80,11 +95,37 @@
         .modal-overlay.visible { display: flex; }
         .modal-content {
             background: #333; padding: 1.5rem; border-radius: 12px;
-            display: flex; flex-direction: column; gap: 1rem;
+            /* Center the 3 top items and balance with 4 bottom items */
+            display: grid;
+            grid-template-columns: 1fr 1.2fr 1.2fr 1fr;
+            grid-auto-rows: 64px;
+            gap: 10px;
+            max-width: 560px;
+            justify-items: center;
+            align-items: center;
+        }
+        /* Character select specific horizontal layout */
+        .char-select-content {
+            display: flex;
+            flex-direction: row;
+            gap: 18px;
+            align-items: flex-start;
+            max-width: 720px;
+        }
+        .char-select-left { flex: 1 1 auto; }
+        .char-select-right { display:flex; align-items:center; justify-content:center; min-width:160px; }
+        .horizontal-grid { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+
+        /* Responsive: stack vertically on narrow viewports */
+        @media (max-width: 640px) {
+            .char-select-content { flex-direction: column; max-width: 92vw; }
+            .char-select-right { min-width: auto; width: 100%; }
+            .horizontal-grid { justify-content: center; }
         }
         .modal-options-grid { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
-        .modal-option { font-size: 2rem; cursor: pointer; transition: transform 0.2s; user-select: none; }
-        .modal-option:active { transform: scale(0.85); }
+    .modal-option { padding: 6px 10px; background: #2f2f2f; color: #fff; border-radius: 8px; cursor: pointer; min-width: 56px; text-align: center; border: 1px solid rgba(255,255,255,0.06); display:flex; flex-direction:column; align-items:center; justify-content:center; }
+    .modal-option:hover, .modal-option:focus { background: #3f3f3f; transform: translateY(-2px); outline: 2px solid rgba(13,110,253,0.18); }
+    .modal-option:active { transform: scale(0.96); }
         #preset-char-grid { max-height: 200px; overflow-y: auto; padding-right: 10px; }
         .preset-char-icon { width: 50px; height: 50px; border-radius: 8px; overflow: hidden; cursor: pointer; border: 2px solid #555; }
         .preset-char-icon:hover { border-color: var(--accent-blue); }
@@ -141,19 +182,29 @@
         </div>
         <div id="controls" class="controls">
              <h2>操作</h2>
-            <button id="save-btn">画像として保存</button>
+            <div class="action-row">
+                <button id="save-btn">画像として保存</button>
+                <!-- Twitter-style share button (will be wired to existing capture/upload flow) -->
+                <a id="tweet-btn" href="#" class="twitter-share-button">ツイート</a>
+            </div>
         </div>
     </main>
 </div>
 
 <!-- 相性選択モーダル -->
 <div id="matchup-modal" class="modal-overlay"><div class="modal-content modal-options-grid"></div></div>
-<!-- キャラ選択モーダル -->
+<!-- キャラ選択モーダル (横長レイアウトに復元) -->
 <div id="char-select-modal" class="modal-overlay">
-    <div class="modal-content">
-        <h3>キャラクターを選択</h3>
-        <div id="preset-char-grid" class="modal-options-grid"></div>
-        <button id="upload-from-modal-btn">画像をアップロード</button>
+    <div class="modal-content char-select-content">
+        <div class="char-select-left">
+            <h3>キャラクターを選択</h3>
+            <!-- horizontal-grid を使ってアイコンを横並びに表示 -->
+            <div id="preset-char-grid" class="horizontal-grid"></div>
+            <!-- アップロードボタンをアイコンの下に配置 -->
+            <div style="width:100%; display:flex; justify-content:center; margin-top:12px;">
+                <button id="upload-from-modal-btn" style="width:92%;">画像をアップロード</button>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -167,59 +218,10 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // プリセット画像のURLリスト（ローカルimgフォルダのファイルを使用）
     const PRESET_IMAGES = [
-        'img/赤青エース.png', 'img/黒イム.png', 'img/緑ゾロ.png', 'img/赤紫ロジャー.png', 'img/緑ボニー.png', 'img/赤レイリー.png', 
-        'img/赤緑ルフィ.png',  'img/赤黄ベティ.png', 'img/赤黒サボ.png',
-        'img/青紫ルフィ.png', 
+        'img/赤青エース.png', 'img/黒イム.png', 'img/緑ゾロ.png', 'img/赤紫ロジャー.png', 
+        'img/赤緑ルフィ.png',  'img/赤黒サボ.png', 'img/青紫ルフィ.png',
+        'img/赤レイリー.png', 'img/赤黄ベティ.png', 'img/緑ボニー.png', 
     ];
-
-    // Try to fetch remote images and convert them to data URLs to avoid CORS/tainted canvas issues.
-    async function preloadPresetImages() {
-        const cacheKey = 'aishou_preset_cache_v1';
-        let cacheMap = {};
-        try { cacheMap = JSON.parse(localStorage.getItem(cacheKey) || '{}'); } catch (e) { cacheMap = {}; }
-
-        const convertPromises = PRESET_IMAGES.map(async (src, i) => {
-            // If it's already a data URL, leave it
-            if (/^data:/i.test(src)) return src;
-
-            // For relative/local paths (img/...), prefer to leave them as-is (they work when served via HTTP).
-            // If we have a cached data URL for the same original src, use it — this helps when running from file://
-            if (!/^(https?:)?\/\//i.test(src)) {
-                return cacheMap[src] || src;
-            }
-
-            // If we cached this remote URL before, use the cached data URL
-            if (cacheMap[src]) return cacheMap[src];
-
-            try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 5000);
-                const res = await fetch(src, { mode: 'cors', signal: controller.signal });
-                clearTimeout(timeoutId);
-                if (!res.ok) return src;
-                const blob = await res.blob();
-                const dataUrl = await new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onerror = () => reject(src);
-                    reader.onload = () => resolve(reader.result);
-                    reader.readAsDataURL(blob);
-                });
-                // Cache the converted data URL
-                try { cacheMap[src] = dataUrl; } catch (e) { /* ignore storage errors */ }
-                return dataUrl;
-            } catch (e) {
-                // on any error, keep original src
-                return src;
-            }
-        });
-
-        const results = await Promise.all(convertPromises);
-        // Replace PRESET_IMAGES entries with converted data URLs where available
-        for (let i = 0; i < results.length; i++) PRESET_IMAGES[i] = results[i];
-
-        // Persist cacheMap back to localStorage (best-effort)
-        try { localStorage.setItem(cacheKey, JSON.stringify(cacheMap)); } catch (e) { /* ignore */ }
-    }
 
     // ===== デフォルトキャラクター設定 =====
     // ここの配列を編集すると、起動時に表示されるキャラクターと分布が変わります。
@@ -273,66 +275,6 @@ document.addEventListener('DOMContentLoaded', () => {
     charSelectModal.addEventListener('click', e => { if (e.target === charSelectModal) charSelectModal.classList.remove('visible'); });
     uploadFromModalBtn.addEventListener('click', () => imageUploadInput.click());
 
-    // Capture the full chart and return a blob (PNG)
-    async function captureFullChart() {
-        const original = getEl('chart-section');
-        const clone = original.cloneNode(true);
-
-        const offscreen = document.createElement('div');
-        offscreen.style.position = 'fixed';
-        offscreen.style.left = '-99999px';
-        offscreen.style.top = '0';
-        offscreen.style.background = getComputedStyle(original).backgroundColor || '#fff';
-        offscreen.appendChild(clone);
-        document.body.appendChild(offscreen);
-
-        // Try embedding external images in the clone to avoid cross-origin tainting
-        await embedExternalImages(clone);
-
-        const imgs = Array.from(clone.querySelectorAll('img'));
-        await Promise.all(imgs.map(img => {
-            if (img.complete) return Promise.resolve();
-            return new Promise(resolve => { img.onload = img.onerror = resolve; });
-        }));
-
-        const wrapper = clone.querySelector('#chart-container') || clone;
-        wrapper.style.width = wrapper.scrollWidth + 'px';
-        wrapper.style.height = wrapper.scrollHeight + 'px';
-
-        const scale = Math.max(1, window.devicePixelRatio || 1);
-        try {
-            const canvas = await html2canvas(clone, {
-                backgroundColor: getComputedStyle(original).backgroundColor || '#1e1e1e',
-                scale: scale,
-                useCORS: true
-            });
-            return await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-        } finally {
-            document.body.removeChild(offscreen);
-        }
-    }
-
-    // Existing save button now uses captureFullChart
-    saveBtn.addEventListener('click', async () => {
-        try {
-            const blob = await captureFullChart();
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.download = 'aishou-hyou.png';
-            link.href = url;
-            link.click();
-            setTimeout(() => URL.revokeObjectURL(url), 5000);
-        } catch (err) {
-            // Detect security/tainted canvas errors and show actionable instructions
-            const msg = (err && (err.message || err.name)) || String(err);
-            if (/insecure|tainted|SecurityError/i.test(msg)) {
-                showSecurityFixInstructions(msg);
-            } else {
-                alert('画像の保存に失敗しました: ' + msg);
-            }
-        }
-    });
-
     // Helper: convert a Blob to a data:URL
     function blobToDataURL(b) {
         return new Promise((resolve, reject) => {
@@ -365,45 +307,137 @@ document.addEventListener('DOMContentLoaded', () => {
         }));
     }
 
-    function showSecurityFixInstructions(originalMessage) {
-        const help = `画像の保存処理はセキュリティ制約により失敗しました。
-原因と対処案:
+    // Capture the full chart and return a blob (PNG)
+    async function captureFullChart() {
+        const original = getEl('chart-section');
+        const clone = original.cloneNode(true);
 
-1) file:// でページを開いている場合
-   → ローカルHTTPサーバーでページを配信してください（推奨）。PowerShell で簡単に起動できます:
+        const offscreen = document.createElement('div');
+        offscreen.style.position = 'fixed';
+        offscreen.style.left = '-99999px';
+        offscreen.style.top = '0';
+        offscreen.style.background = getComputedStyle(original).backgroundColor || '#fff';
+        offscreen.appendChild(clone);
+        document.body.appendChild(offscreen);
 
-   # Python 3 がインストールされている場合（カレントフォルダで実行）
-   py -3 -m http.server 8000
-   # または
-   python -m http.server 8000
+    // Replace the header/title text in the clone so saved image shows project title
+    const headerEl = clone.querySelector('.distribution-header h2');
+    if (headerEl) headerEl.textContent = 'ワンピカ相性表メーカー';
 
-   その後ブラウザで http://localhost:8000/index.html を開いて再試行してください。
+    // Try to embed any external images found in the clone to reduce CORS/taint risks
+    await embedExternalImages(clone);
 
-2) 外部画像を使っている場合（CORS）
-    → 画像を配信しているサーバーが Access-Control-Allow-Origin ヘッダを返す必要があります。
-    もし外部ホストのヘッダを変えられない場合は、画像をこのプロジェクトの 'img/' に置いて相対パスで読み込んでください。
+    const imgs = Array.from(clone.querySelectorAll('img'));
+    await Promise.all(imgs.map(img => {
+            if (img.complete) return Promise.resolve();
+            return new Promise(resolve => { img.onload = img.onerror = resolve; });
+        }));
 
-3) 一時的な回避（非推奨）
-   → ブラウザを特別オプション付きで起動する方法もありますが、セキュリティリスクがあるため推奨しません。
+        const wrapper = clone.querySelector('#chart-container') || clone;
+        wrapper.style.width = wrapper.scrollWidth + 'px';
+        wrapper.style.height = wrapper.scrollHeight + 'px';
 
-元のエラー: ${originalMessage}
-
-必要なら、私が PRESET_IMAGES を起動時に data:URL に変換するコードを追加して、CORS の影響を回避する変更を行えます。実施しますか？`;
-        alert(help);
+        const scale = Math.max(1, window.devicePixelRatio || 1);
+        try {
+            const canvas = await html2canvas(clone, {
+                backgroundColor: getComputedStyle(original).backgroundColor || '#1e1e1e',
+                scale: scale,
+                useCORS: true
+            });
+            return await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+        } finally {
+            document.body.removeChild(offscreen);
+        }
     }
+
+    // Existing save button now uses captureFullChart
+    saveBtn.addEventListener('click', async () => {
+        try {
+            const blob = await captureFullChart();
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.download = 'aishou-hyou.png';
+            link.href = url;
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+        } catch (err) {
+            alert('画像の保存に失敗しました: ' + (err && err.message ? err.message : err));
+        }
+    });
+
+    // Tweet button: try to upload image to Imgur (optional) then open Twitter intent with text+url+hashtag
+    const tweetBtn = getEl('tweet-btn');
+    tweetBtn.addEventListener('click', async (evt) => {
+        evt.preventDefault();
+        // Generate image blob
+        let blob;
+        try {
+            blob = await captureFullChart();
+        } catch (err) {
+            alert('画像の生成に失敗しました: ' + (err && err.message ? err.message : err));
+            return;
+        }
+
+        // Ask for optional Imgur Client-ID to upload
+    const clientId = prompt(`Imgurに自動アップロードする場合、Client-IDを入力してください。\n（未入力の場合はツイート画面を開きます）`);
+        let imageUrl = null;
+        if (clientId) {
+            try {
+                const form = new FormData();
+                form.append('image', blob);
+                const res = await fetch('https://api.imgur.com/3/image', {
+                    method: 'POST',
+                    headers: { Authorization: 'Client-ID ' + clientId },
+                    body: form
+                });
+                const data = await res.json();
+                if (data && data.success && data.data && data.data.link) {
+                    imageUrl = data.data.link;
+                } else {
+                    alert('Imgurへのアップロードに失敗しました。ツイート画面を開きます。');
+                }
+            } catch (err) {
+                alert('Imgurアップロード中にエラーが発生しました。ツイート画面を開きます。');
+            }
+        }
+
+        const text = encodeURIComponent('相性表を作成しました #ワンピカ相性表メーカー');
+        const pageUrl = encodeURIComponent(window.location.href);
+        let twitterUrl;
+        if (imageUrl) {
+            twitterUrl = `https://twitter.com/intent/tweet?text=${text}&url=${encodeURIComponent(imageUrl)}`;
+        } else {
+            twitterUrl = `https://twitter.com/intent/tweet?text=${text}&url=${pageUrl}`;
+        }
+        window.open(twitterUrl, '_blank');
+    });
+
+        // Load Twitter widgets script (optional — provides standard styling for anchor)
+        (function(d, s, id) {
+            if (d.getElementById(id)) return;
+            var js = d.createElement(s); js.id = id;
+            js.src = "https://platform.twitter.com/widgets.js";
+            var fjs = d.getElementsByTagName(s)[0];
+            fjs.parentNode.insertBefore(js, fjs);
+        }(document, 'script', 'twitter-wjs'));
 
     function initializeState(count) {
         // count引数がある場合（再作成ボタン）は、以前のロジックで新しい表を作成
         if (count) {
-            state = { charCount: count, icons: {}, distributions: { other: 30 }, matchups: {}, otherMatchups: {} };
-            const remainingDist = 70;
-            const baseDist = Math.floor(remainingDist / count);
-            const remainder = remainingDist % count;
+            // Auto-fill icons from PRESET_IMAGES and evenly distribute percentages
+            state = { charCount: count, icons: {}, distributions: {}, matchups: {}, otherMatchups: {} };
+            // Fill icons in order from PRESET_IMAGES (wrap if necessary)
             for (let i = 0; i < count; i++) {
-                state.distributions[i] = baseDist + (i < remainder ? 1 : 0);
+                state.icons[i] = PRESET_IMAGES[i % PRESET_IMAGES.length];
             }
-            // 再計算して other を正しく設定
-            computeOtherDistribution();
+            // Evenly distribute 100% across characters; other becomes 0
+            const base = Math.floor(100 / count);
+            let remainder = 100 - base * count;
+            for (let i = 0; i < count; i++) {
+                state.distributions[i] = base + (remainder > 0 ? 1 : 0);
+                if (remainder > 0) remainder--;
+            }
+            state.distributions.other = 0;
         } else { // count引数がない場合（初回起動時）は、デフォルトキャラクターを読み込む
             const defaultCount = DEFAULT_CHARACTERS.length;
             state = { charCount: defaultCount, icons: {}, distributions: {}, matchups: {}, otherMatchups: {} };
@@ -411,8 +445,8 @@ document.addEventListener('DOMContentLoaded', () => {
             let charactersDistSum = 0;
             DEFAULT_CHARACTERS.forEach((char, index) => {
                 state.icons[index] = char.src;
-                state.distributions[index] = char.distribution;
-                charactersDistSum += char.distribution;
+                state.distributions[index] = Number(char.distribution);
+                charactersDistSum += Number(char.distribution);
             });
             
             state.distributions.other = 100 - charactersDistSum;
@@ -422,13 +456,83 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Try to fetch remote images and convert them to data URLs to avoid CORS/tainted canvas issues.
+    async function preloadPresetImages() {
+        const cacheKey = 'aishou_preset_cache_v1';
+        let cacheMap = {};
+        try { cacheMap = JSON.parse(localStorage.getItem(cacheKey) || '{}'); } catch (e) { cacheMap = {}; }
+
+        const convertPromises = PRESET_IMAGES.map(async (src, i) => {
+            // If it's already a data URL, leave it
+            if (/^data:/i.test(src)) return src;
+
+            // For relative/local paths (img/...), prefer to leave them as-is (they work when served via HTTP).
+            // If we have a cached data URL for the same original src, use it — this helps when running from file://
+            if (!/^(https?:)?\/\//i.test(src)) {
+                return cacheMap[src] || src;
+            }
+
+            // If we cached this remote URL before, use the cached data URL
+            if (cacheMap[src]) return cacheMap[src];
+
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 5000);
+                const res = await fetch(src, { mode: 'cors', signal: controller.signal });
+                clearTimeout(timeoutId);
+                if (!res.ok) return src;
+                const blob = await res.blob();
+                const dataUrl = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onerror = () => reject(src);
+                    reader.onload = () => resolve(reader.result);
+                    reader.readAsDataURL(blob);
+                });
+                // Cache the converted data URL
+                try { cacheMap[src] = dataUrl; } catch (e) { /* ignore storage errors */ }
+                return dataUrl;
+            } catch (e) {
+                // on any error, keep original src
+                return src;
+            }
+        });
+
+        const results = await Promise.all(convertPromises);
+        // Replace PRESET_IMAGES entries with converted data URLs where available
+        for (let i = 0; i < results.length; i++) PRESET_IMAGES[i] = results[i];
+
+        // Persist cacheMap back to localStorage (best-effort)
+        try { localStorage.setItem(cacheKey, JSON.stringify(cacheMap)); } catch (e) { /* ignore */ }
+    }
+
     function createModalOptions() {
         const matchupModalContent = matchupModal.querySelector('.modal-content');
         matchupModalContent.innerHTML = '';
-        ICONS.forEach(icon => {
+        ICONS.forEach((icon, idx) => {
             const option = document.createElement('div');
             option.className = 'modal-option';
-            option.textContent = icon;
+            // Position: first 3 icons occupy row 1 (columns 1-3), next 4 occupy row 2 (columns 1-4)
+            if (idx < 3) {
+                // center the first 3 items on the top row by placing them in columns 2..4
+                option.style.gridColumn = String(idx + 2);
+                option.style.gridRow = '1';
+            } else {
+                // place remaining 4 across columns 1..4 on the second row
+                option.style.gridColumn = String((idx - 3) + 1);
+                option.style.gridRow = '2';
+            }
+            const label = document.createElement('div');
+            label.textContent = icon;
+            label.style.fontSize = '1.6rem';
+            const pct = document.createElement('div');
+            const pctVal = COMPATIBILITY_MAP[icon] || 50;
+            pct.textContent = pctVal + '%';
+            pct.style.fontSize = '0.85rem';
+            pct.style.marginTop = '4px';
+            pct.style.opacity = '0.9';
+            pct.style.color = '#ffd';
+            option.appendChild(label);
+            option.appendChild(pct);
             option.addEventListener('click', () => handleModalSelection(icon));
             matchupModalContent.appendChild(option);
         });
@@ -515,21 +619,197 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function createDistributionCell(index) {
-        const input = document.createElement('input');
-        input.type = 'number';
-        input.className = 'distribution-input';
-        input.value = state.distributions[index] || '';
+        // 'other' remains read-only and displays computed percent
         if (index === 'other') {
-            input.readOnly = true;
-            input.title = '他の分布から自動計算されます';
-        } else {
-            input.addEventListener('input', e => {
-                state.distributions[index] = e.target.value;
+            const span = document.createElement('span');
+            const val = (state.distributions.other !== undefined) ? Number(state.distributions.other) : 0;
+            span.textContent = `${val}%`;
+            span.className = 'distribution-label';
+            return createCell({ content: span, className: 'other-cell' });
+        }
+
+        // Create a cell that shows the percentage text. A hidden select inside allows editing when clicked.
+        const cellDisplay = document.createElement('div');
+    cellDisplay.style.width = '100%';
+    cellDisplay.style.height = '100%';
+    cellDisplay.style.boxSizing = 'border-box';
+    cellDisplay.style.overflow = 'hidden';
+        cellDisplay.style.display = 'flex';
+    cellDisplay.style.alignItems = 'center';
+    cellDisplay.style.justifyContent = 'center';
+    cellDisplay.style.paddingRight = '20px';
+
+    const percentText = document.createElement('span');
+    percentText.textContent = (state.distributions[index] !== undefined) ? `${state.distributions[index]}%` : '0%';
+    percentText.style.pointerEvents = 'none';
+    percentText.style.fontSize = '1.0rem';
+    percentText.style.fontWeight = '700';
+    percentText.style.zIndex = '2';
+    percentText.style.position = 'relative';
+    percentText.style.left = '0';
+    percentText.style.paddingRight = '8px';
+    // Always show numeric percentage fully; avoid truncation/ellipsis so numbers remain readable
+    percentText.style.display = 'inline-block';
+    // move the percent text slightly right so it sits nearer the select arrow
+    percentText.style.maxWidth = 'calc(var(--cell-size) - 20px)';
+    percentText.style.marginLeft = '6px';
+    percentText.style.overflow = 'visible';
+    percentText.style.textOverflow = 'clip';
+    percentText.style.whiteSpace = 'nowrap';
+
+        const select = document.createElement('select');
+        select.className = 'distribution-select';
+        select.style.position = 'absolute';
+        select.style.opacity = '0';
+        select.style.pointerEvents = 'none';
+        for (let v = 0; v <= 100; v += 5) {
+            const opt = document.createElement('option');
+            opt.value = String(v);
+            opt.textContent = String(v);
+            select.appendChild(opt);
+        }
+        // Add a custom option at the end
+        const customOpt = document.createElement('option');
+        customOpt.value = 'custom';
+        customOpt.textContent = 'カスタム...';
+        select.appendChild(customOpt);
+        select.value = String(state.distributions[index] || 0);
+
+        select.addEventListener('change', e => {
+            const raw = e.target.value;
+            if (raw === 'custom') {
+                const input = prompt('カスタム値を入力してください（0〜100）');
+                if (input === null) { select.value = String(state.distributions[index] || 0); return; }
+                const n = Number(input);
+                if (isNaN(n) || n < 0 || n > 100) { alert('0〜100の数値を入力してください'); select.value = String(state.distributions[index] || 0); return; }
+                state.distributions[index] = n;
+                percentText.textContent = n + '%';
                 computeOtherDistribution();
                 renderChart();
-            });
+                return;
+            }
+            const val = Number(raw);
+            state.distributions[index] = val;
+            percentText.textContent = val + '%';
+            computeOtherDistribution();
+            renderChart();
+        });
+
+        // Build outer cell. We'll allow two interaction zones:
+        // - clicking the select arrow (we'll show the select over the right edge) opens native dropdown
+        // - clicking the rest of the cell opens a numeric prompt for direct input
+        const outer = createCell({ content: cellDisplay });
+        cellDisplay.appendChild(percentText);
+
+    // Create a thin vertical button at the right edge with a V-shaped icon.
+    const selectWrapper = document.createElement('div');
+    selectWrapper.style.position = 'absolute';
+    selectWrapper.style.right = '0px';
+    selectWrapper.style.top = '0px';
+    selectWrapper.style.bottom = '0px';
+    selectWrapper.style.width = '16px';
+    selectWrapper.style.overflow = 'hidden';
+    selectWrapper.style.borderRadius = '0';
+    selectWrapper.style.background = 'rgba(255,255,255,0.03)';
+    selectWrapper.style.borderLeft = '1px solid rgba(255,255,255,0.04)';
+    selectWrapper.style.display = 'flex';
+    selectWrapper.style.alignItems = 'center';
+    selectWrapper.style.justifyContent = 'center';
+    // Hide the native select visually (we'll trigger it programmatically) so only our V icon is visible
+    select.style.opacity = '0';
+    select.style.pointerEvents = 'none';
+    selectWrapper.appendChild(select);
+
+    // Custom vertical button that shows a V-shaped chevron icon
+    const customBtn = document.createElement('div');
+    customBtn.style.position = 'absolute';
+    customBtn.style.right = '0px';
+    customBtn.style.top = '0px';
+    customBtn.style.bottom = '0px';
+    customBtn.style.width = '16px';
+    customBtn.style.display = 'flex';
+    customBtn.style.alignItems = 'center';
+    customBtn.style.justifyContent = 'center';
+    customBtn.style.cursor = 'pointer';
+    customBtn.style.background = 'transparent';
+    customBtn.style.paddingRight = '2px';
+    customBtn.style.borderRadius = '0';
+    customBtn.setAttribute('aria-label', '分布を選択');
+    // SVG V-shaped icon (down chevron style)
+    customBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><polyline points="2,4 6,8 10,4" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    // When custom button clicked, programmatically open the select
+    customBtn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        try {
+            // Try to synthesize a mousedown which often opens the native select
+            const me = new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window });
+            select.dispatchEvent(me);
+            select.focus();
+            // As a fallback, temporarily enable pointer events and click
+            setTimeout(() => {
+                select.style.pointerEvents = 'auto';
+                select.style.opacity = '0.01';
+                select.click();
+                setTimeout(() => { select.style.pointerEvents = 'none'; select.style.opacity = '0'; }, 200);
+            }, 10);
+        } catch (e) {
+            // ignore
         }
-        return createCell({ content: input });
+    });
+    cellDisplay.appendChild(customBtn);
+    // Style the select so the arrow area is clearly visible and tappable
+    select.style.opacity = '1';
+    select.style.pointerEvents = 'auto';
+    // Make the native select just wide enough for the native arrow — keep it minimally intrusive
+    select.style.width = '18px';
+    select.style.height = '100%';
+    select.style.writingMode = 'vertical-rl';
+    select.style.textOrientation = 'mixed';
+    select.style.background = 'transparent';
+    // Hide the select's text so only the native arrow is visible; keep arrow usable.
+    // Hide the select's visible text reliably while keeping the native arrow visible.
+    select.style.color = 'transparent';
+    select.style.textShadow = 'none';
+    select.style.border = 'none';
+    select.style.overflow = 'hidden';
+    select.style.textIndent = '9999px';
+    select.style.whiteSpace = 'nowrap';
+    select.style.appearance = 'menulist-button';
+    select.style.webkitAppearance = 'menulist-button';
+    select.style.textAlign = 'right';
+    select.style.paddingRight = '6px';
+    // Make the select look like a small button: hide its text but show native arrow
+    selectWrapper.style.boxShadow = 'inset 0 0 0 1px rgba(255,255,255,0.02)';
+    selectWrapper.style.cursor = 'pointer';
+    selectWrapper.style.alignItems = 'center';
+    selectWrapper.style.paddingRight = '1px';
+
+        // Ensure percent text appears above the select visually
+        percentText.style.zIndex = '2';
+        selectWrapper.style.zIndex = '1';
+
+        // Clicking the selectWrapper opens native dropdown (just focus the select)
+        select.addEventListener('mousedown', e => {
+            // allow default behavior to open native dropdown
+            e.stopPropagation();
+        });
+
+        // Clicking the visible percent area (outer) opens a numeric prompt for direct input
+        outer.addEventListener('click', (e) => {
+            // If the click was inside the selectWrapper, let native select handle it
+            if (e.target === select || select.contains(e.target) || selectWrapper.contains(e.target)) return;
+            const input = prompt('直接値を入力してください（0〜100）', String(state.distributions[index] || 0));
+            if (input === null) return;
+            const n = Number(input);
+            if (isNaN(n) || n < 0 || n > 100) { alert('0〜100の数値を入力してください'); return; }
+            state.distributions[index] = n;
+            percentText.textContent = n + '%';
+            computeOtherDistribution();
+            renderChart();
+        });
+
+        cellDisplay.appendChild(selectWrapper);
+        return outer;
     }
 
     function createIconCell(index, isHeader = false) {
@@ -541,17 +821,17 @@ document.addEventListener('DOMContentLoaded', () => {
             content.src = iconSrc;
         } else content.textContent = '+';
         const cell = createCell({ content, className: 'char-icon-slot' });
-        if (!isHeader) {
-            cell.addEventListener('click', () => {
-                currentEdit = { type: 'icon', index };
-                charSelectModal.classList.add('visible');
-            });
-        }
+        // Allow editing the character by clicking the icon whether it's in the top row or the left column
+        cell.addEventListener('click', () => {
+            currentEdit = { type: 'icon', index };
+            charSelectModal.classList.add('visible');
+        });
         return cell;
     }
 
     function createMatchupCell(r, c) {
-        if (r === c) return createCell({ text: '-', className: 'data-cell disabled' });
+        // For same-character matchup, show the default icon symbol (ー) instead of a dash
+        if (r === c) return createCell({ text: DEFAULT_ICON, className: 'data-cell disabled' });
         const icon = state.matchups[`${r}-${c}`] || DEFAULT_ICON;
         return createCell({ text: icon, className: 'data-cell', onClick: () => {
             currentEdit = { type: 'matchup', row: r, col: c };
@@ -600,12 +880,15 @@ document.addEventListener('DOMContentLoaded', () => {
         renderChart();
     }
 
-    async function start() {
-        await preloadPresetImages();
-        initializeState(); // 引数なしで呼び出し、デフォルトキャラクターを読み込む
-        createModalOptions();
-        renderLegend();
-        renderChart();
+    function start() {
+        // Preload/convert preset images when possible, then initialize state
+        (async () => {
+            await preloadPresetImages();
+            initializeState(); // 引数なしで呼び出し、デフォルトキャラクターを読み込む
+            createModalOptions();
+            renderLegend();
+            renderChart();
+        })();
     }
     start();
 });
