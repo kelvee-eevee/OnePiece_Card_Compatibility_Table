@@ -1,0 +1,2 @@
+# OnePiece_Card_Compatibility_Table
+相性表
