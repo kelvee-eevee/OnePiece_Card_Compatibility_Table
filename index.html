@@ -455,7 +455,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Open Twitter intent with the page URL (Imgur upload removed)
-        const text = encodeURIComponent('相性表を作成しました #ワンピカ相性表メーカー');
+        const text = encodeURIComponent('相性表を作成しました！ #ワンピカ相性表メーカー');
         const pageUrl = encodeURIComponent(window.location.href);
         const twitterUrl = `https://twitter.com/intent/tweet?text=${text}&url=${pageUrl}`;
         window.open(twitterUrl, '_blank');
