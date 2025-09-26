@@ -172,6 +172,55 @@ document.addEventListener('DOMContentLoaded', () => {
         'img/青紫ルフィ.png', 
     ];
 
+    // Try to fetch remote images and convert them to data URLs to avoid CORS/tainted canvas issues.
+    async function preloadPresetImages() {
+        const cacheKey = 'aishou_preset_cache_v1';
+        let cacheMap = {};
+        try { cacheMap = JSON.parse(localStorage.getItem(cacheKey) || '{}'); } catch (e) { cacheMap = {}; }
+
+        const convertPromises = PRESET_IMAGES.map(async (src, i) => {
+            // If it's already a data URL, leave it
+            if (/^data:/i.test(src)) return src;
+
+            // For relative/local paths (img/...), prefer to leave them as-is (they work when served via HTTP).
+            // If we have a cached data URL for the same original src, use it — this helps when running from file://
+            if (!/^(https?:)?\/\//i.test(src)) {
+                return cacheMap[src] || src;
+            }
+
+            // If we cached this remote URL before, use the cached data URL
+            if (cacheMap[src]) return cacheMap[src];
+
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 5000);
+                const res = await fetch(src, { mode: 'cors', signal: controller.signal });
+                clearTimeout(timeoutId);
+                if (!res.ok) return src;
+                const blob = await res.blob();
+                const dataUrl = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onerror = () => reject(src);
+                    reader.onload = () => resolve(reader.result);
+                    reader.readAsDataURL(blob);
+                });
+                // Cache the converted data URL
+                try { cacheMap[src] = dataUrl; } catch (e) { /* ignore storage errors */ }
+                return dataUrl;
+            } catch (e) {
+                // on any error, keep original src
+                return src;
+            }
+        });
+
+        const results = await Promise.all(convertPromises);
+        // Replace PRESET_IMAGES entries with converted data URLs where available
+        for (let i = 0; i < results.length; i++) PRESET_IMAGES[i] = results[i];
+
+        // Persist cacheMap back to localStorage (best-effort)
+        try { localStorage.setItem(cacheKey, JSON.stringify(cacheMap)); } catch (e) { /* ignore */ }
+    }
+
     // ===== デフォルトキャラクター設定 =====
     // ここの配列を編集すると、起動時に表示されるキャラクターと分布が変わります。
     const DEFAULT_CHARACTERS = [
@@ -224,14 +273,124 @@ document.addEventListener('DOMContentLoaded', () => {
     charSelectModal.addEventListener('click', e => { if (e.target === charSelectModal) charSelectModal.classList.remove('visible'); });
     uploadFromModalBtn.addEventListener('click', () => imageUploadInput.click());
 
-    saveBtn.addEventListener('click', () => {
-        html2canvas(getEl('chart-section'), { backgroundColor: '#1e1e1e', scale: 2 }).then(canvas => {
+    // Capture the full chart and return a blob (PNG)
+    async function captureFullChart() {
+        const original = getEl('chart-section');
+        const clone = original.cloneNode(true);
+
+        const offscreen = document.createElement('div');
+        offscreen.style.position = 'fixed';
+        offscreen.style.left = '-99999px';
+        offscreen.style.top = '0';
+        offscreen.style.background = getComputedStyle(original).backgroundColor || '#fff';
+        offscreen.appendChild(clone);
+        document.body.appendChild(offscreen);
+
+        // Try embedding external images in the clone to avoid cross-origin tainting
+        await embedExternalImages(clone);
+
+        const imgs = Array.from(clone.querySelectorAll('img'));
+        await Promise.all(imgs.map(img => {
+            if (img.complete) return Promise.resolve();
+            return new Promise(resolve => { img.onload = img.onerror = resolve; });
+        }));
+
+        const wrapper = clone.querySelector('#chart-container') || clone;
+        wrapper.style.width = wrapper.scrollWidth + 'px';
+        wrapper.style.height = wrapper.scrollHeight + 'px';
+
+        const scale = Math.max(1, window.devicePixelRatio || 1);
+        try {
+            const canvas = await html2canvas(clone, {
+                backgroundColor: getComputedStyle(original).backgroundColor || '#1e1e1e',
+                scale: scale,
+                useCORS: true
+            });
+            return await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+        } finally {
+            document.body.removeChild(offscreen);
+        }
+    }
+
+    // Existing save button now uses captureFullChart
+    saveBtn.addEventListener('click', async () => {
+        try {
+            const blob = await captureFullChart();
+            const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.download = 'aishou-hyou.png';
-            link.href = canvas.toDataURL();
+            link.href = url;
             link.click();
-        });
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+        } catch (err) {
+            // Detect security/tainted canvas errors and show actionable instructions
+            const msg = (err && (err.message || err.name)) || String(err);
+            if (/insecure|tainted|SecurityError/i.test(msg)) {
+                showSecurityFixInstructions(msg);
+            } else {
+                alert('画像の保存に失敗しました: ' + msg);
+            }
+        }
     });
+
+    // Helper: convert a Blob to a data:URL
+    function blobToDataURL(b) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onerror = () => reject(new Error('FileReader failed'));
+            reader.onload = () => resolve(reader.result);
+            reader.readAsDataURL(b);
+        });
+    }
+
+    // Embed external images found within a cloned DOM node by fetching them and replacing src with data URLs.
+    // Only attempts to convert remote http(s) images. Relative/local and data: URLs are left as-is.
+    async function embedExternalImages(rootElement) {
+        const imgs = Array.from(rootElement.querySelectorAll('img'));
+        await Promise.all(imgs.map(async (img) => {
+            const src = img.getAttribute('src') || img.src || '';
+            if (!/^(https?:)?\/\//i.test(src)) return; // skip data: and relative/local paths
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 7000);
+                const res = await fetch(src, { mode: 'cors', signal: controller.signal });
+                clearTimeout(timeoutId);
+                if (!res.ok) return;
+                const blob = await res.blob();
+                const dataUrl = await blobToDataURL(blob);
+                img.src = dataUrl;
+            } catch (e) {
+                // ignore failures; leave original src which may taint the canvas
+            }
+        }));
+    }
+
+    function showSecurityFixInstructions(originalMessage) {
+        const help = `画像の保存処理はセキュリティ制約により失敗しました。
+原因と対処案:
+
+1) file:// でページを開いている場合
+   → ローカルHTTPサーバーでページを配信してください（推奨）。PowerShell で簡単に起動できます:
+
+   # Python 3 がインストールされている場合（カレントフォルダで実行）
+   py -3 -m http.server 8000
+   # または
+   python -m http.server 8000
+
+   その後ブラウザで http://localhost:8000/index.html を開いて再試行してください。
+
+2) 外部画像を使っている場合（CORS）
+    → 画像を配信しているサーバーが Access-Control-Allow-Origin ヘッダを返す必要があります。
+    もし外部ホストのヘッダを変えられない場合は、画像をこのプロジェクトの 'img/' に置いて相対パスで読み込んでください。
+
+3) 一時的な回避（非推奨）
+   → ブラウザを特別オプション付きで起動する方法もありますが、セキュリティリスクがあるため推奨しません。
+
+元のエラー: ${originalMessage}
+
+必要なら、私が PRESET_IMAGES を起動時に data:URL に変換するコードを追加して、CORS の影響を回避する変更を行えます。実施しますか？`;
+        alert(help);
+    }
 
     function initializeState(count) {
         // count引数がある場合（再作成ボタン）は、以前のロジックで新しい表を作成
@@ -280,6 +439,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const iconDiv = document.createElement('div');
             iconDiv.className = 'preset-char-icon';
             const img = document.createElement('img');
+            // Only set crossOrigin for remote images (http/https or protocol-relative).
+            if (/^(https?:)?\/\//i.test(src)) img.crossOrigin = 'anonymous';
             img.src = src;
             iconDiv.appendChild(img);
             iconDiv.addEventListener('click', () => {
@@ -374,7 +535,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function createIconCell(index, isHeader = false) {
         const iconSrc = state.icons[index];
         const content = document.createElement(iconSrc ? 'img' : 'span');
-        if (iconSrc) content.src = iconSrc; else content.textContent = '+';
+        if (iconSrc) {
+            // Only set crossOrigin for remote images; local relative paths or data: should not set it
+            if (/^(https?:)?\/\//i.test(iconSrc)) content.crossOrigin = 'anonymous';
+            content.src = iconSrc;
+        } else content.textContent = '+';
         const cell = createCell({ content, className: 'char-icon-slot' });
         if (!isHeader) {
             cell.addEventListener('click', () => {
@@ -435,7 +600,8 @@ document.addEventListener('DOMContentLoaded', () => {
         renderChart();
     }
 
-    function start() {
+    async function start() {
+        await preloadPresetImages();
         initializeState(); // 引数なしで呼び出し、デフォルトキャラクターを読み込む
         createModalOptions();
         renderLegend();
