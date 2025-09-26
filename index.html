@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>相性表メーカー (デフォルトキャラ対応版)</title>
+    <!-- html2canvasライブラリをインポートし、画像保存を可能にします -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --surface-color: #1e1e1e;
+            --primary-text: #e0e0e0;
+            --border-color: #444;
+            --header-bg: #333;
+            --cell-size: 60px;
+            --accent-blue: #0d6efd;
+            --accent-green: #198754;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            margin: 0;
+            padding: 1rem;
+            background-color: var(--bg-color);
+            color: var(--primary-text);
+            font-size: 16px;
+        }
+        .container { max-width: 900px; margin: 0 auto; }
+        .config-section, .chart-section, .controls {
+            background-color: var(--surface-color);
+            padding: 1.5rem;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            margin-bottom: 1.5rem;
+        }
+        h1, h2 { color: #f5f5f5; }
+        h1 { text-align: center; margin-bottom: 1.5rem; }
+        h2 { margin-top: 0; font-size: 1.3rem; border-bottom: 2px solid var(--header-bg); padding-bottom: 0.5rem; }
+        .char-count-form { display: flex; gap: 10px; align-items: center; }
+        .char-count-form input {
+            flex-grow: 1; padding: 10px; border: 1px solid #555;
+            background-color: var(--header-bg); color: var(--primary-text);
+            border-radius: 8px; font-size: 1rem;
+        }
+        .char-count-form button {
+            padding: 10px 20px; border: none; background-color: var(--accent-blue); color: white;
+            border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer;
+        }
+        #chart-wrapper { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        #chart-container { display: inline-grid; border-top: 1px solid var(--border-color); border-left: 1px solid var(--border-color); margin-top: 1rem; }
+        .grid-cell {
+            width: var(--cell-size); height: var(--cell-size);
+            display: flex; justify-content: center; align-items: center;
+            border-right: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color);
+            box-sizing: border-box; background-color: #2a2a2a;
+            position: relative;
+        }
+        .header-text { background-color: var(--header-bg); font-weight: bold; font-size: 0.8rem; padding: 2px; text-align: center; }
+        .char-icon-slot, .data-cell { font-size: 1.8rem; font-weight: bold; cursor: pointer; }
+        .char-icon-slot img { width: 100%; height: 100%; object-fit: cover; }
+        .data-cell.disabled { background-color: #444; cursor: not-allowed; }
+        .win-rate-cell { font-size: 0.9rem; font-weight: bold; background-color: #4a3c00; color: #ffdf7c; }
+        .other-cell { background-color: var(--header-bg); }
+        .distribution-input {
+            width: 100%; height: 100%; border: none; text-align: center;
+            font-size: 1rem; font-weight: bold; background-color: #2c3e50; color: #fff;
+        }
+        #dist-total { font-weight: bold; }
+        #dist-total.error { color: #ff6b6b; }
+        .controls button {
+            width: 100%; padding: 0.8rem; font-size: 1.1rem; border: none; border-radius: 8px;
+            color: white; cursor: pointer; font-weight: bold; background-color: var(--accent-green);
+        }
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.7); display: none; justify-content: center; align-items: center;
+            z-index: 1000;
+        }
+        .modal-overlay.visible { display: flex; }
+        .modal-content {
+            background: #333; padding: 1.5rem; border-radius: 12px;
+            display: flex; flex-direction: column; gap: 1rem;
+        }
+        .modal-options-grid { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+        .modal-option { font-size: 2rem; cursor: pointer; transition: transform 0.2s; user-select: none; }
+        .modal-option:active { transform: scale(0.85); }
+        #preset-char-grid { max-height: 200px; overflow-y: auto; padding-right: 10px; }
+        .preset-char-icon { width: 50px; height: 50px; border-radius: 8px; overflow: hidden; cursor: pointer; border: 2px solid #555; }
+        .preset-char-icon:hover { border-color: var(--accent-blue); }
+        .preset-char-icon img { width: 100%; height: 100%; object-fit: cover; }
+        #upload-from-modal-btn {
+            padding: 10px; background-color: var(--accent-blue); color: white;
+            border: none; border-radius: 8px; font-weight: bold; cursor: pointer;
+        }
+        .icon-legend {
+            display: flex; justify-content: center; flex-wrap: wrap;
+            gap: 1rem; margin-top: 1.5rem; padding-top: 1rem;
+            border-top: 1px solid var(--border-color); font-size: 0.9rem;
+        }
+        .legend-item { display: flex; align-items: center; gap: 0.5rem; }
+        .legend-item span:first-child { font-size: 1.5rem; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>相性表メーカー</h1>
+    <main>
+        <div class="config-section">
+            <h2>キャラクター数を指定</h2>
+            <div class="char-count-form">
+                <select id="char-count-input">
+                    <!-- default 4 -->
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="4" selected>4</option>
+                    <option value="5">5</option>
+                    <option value="6">6</option>
+                    <option value="7">7</option>
+                    <option value="8">8</option>
+                    <option value="9">9</option>
+                    <option value="10">10</option>
+                    <option value="11">11</option>
+                    <option value="12">12</option>
+                    <option value="13">13</option>
+                    <option value="14">14</option>
+                    <option value="15">15</option>
+                </select>
+                <button id="create-chart-btn">表を再作成</button>
+            </div>
+        </div>
+        <div id="chart-section" class="chart-section">
+            <div class="distribution-header">
+                 <h2>分布と相性を入力</h2>
+                 <div id="dist-total">合計分布: 0%</div>
+            </div>
+            <div id="chart-wrapper"><div id="chart-container"></div></div>
+            <div id="icon-legend" class="icon-legend"></div>
+        </div>
+        <div id="controls" class="controls">
+             <h2>操作</h2>
+            <button id="save-btn">画像として保存</button>
+        </div>
+    </main>
+</div>
+
+<!-- 相性選択モーダル -->
+<div id="matchup-modal" class="modal-overlay"><div class="modal-content modal-options-grid"></div></div>
+<!-- キャラ選択モーダル -->
+<div id="char-select-modal" class="modal-overlay">
+    <div class="modal-content">
+        <h3>キャラクターを選択</h3>
+        <div id="preset-char-grid" class="modal-options-grid"></div>
+        <button id="upload-from-modal-btn">画像をアップロード</button>
+    </div>
+</div>
+
+<input type="file" id="image-upload-input" class="hidden" accept="image/*">
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const COMPATIBILITY_MAP = { '⭐︎': 80, '◎': 70, '◯': 60, 'ー': 50, '△': 40, '▲': 30, '×': 20 };
+    const ICONS = Object.keys(COMPATIBILITY_MAP);
+    const DEFAULT_ICON = 'ー';
+    
+    // プリセット画像のURLリスト（ローカルimgフォルダのファイルを使用）
+    const PRESET_IMAGES = [
+        'img/赤青エース.png', 'img/黒イム.png', 'img/緑ゾロ.png', 'img/赤紫ロジャー.png', 'img/緑ボニー.png', 'img/赤レイリー.png', 
+        'img/赤緑ルフィ.png',  'img/赤黄ベティ.png', 'img/赤黒サボ.png',
+        'img/青紫ルフィ.png', 
+    ];
+
+    // ===== デフォルトキャラクター設定 =====
+    // ここの配列を編集すると、起動時に表示されるキャラクターと分布が変わります。
+    const DEFAULT_CHARACTERS = [
+        { src: PRESET_IMAGES[0], distribution: 20 },
+        { src: PRESET_IMAGES[1], distribution: 20 },
+        { src: PRESET_IMAGES[2], distribution: 20 },
+        { src: PRESET_IMAGES[3], distribution: 15 }
+    ];
+    // ===================================
+
+    let state = {};
+    let currentEdit = {};
+
+    const getEl = id => document.getElementById(id);
+    const charCountInput = getEl('char-count-input');
+    const createChartBtn = getEl('create-chart-btn');
+    const chartContainer = getEl('chart-container');
+    const matchupModal = getEl('matchup-modal');
+    const charSelectModal = getEl('char-select-modal');
+    const imageUploadInput = getEl('image-upload-input');
+    const distTotalEl = getEl('dist-total');
+    const saveBtn = getEl('save-btn');
+    const legendContainer = getEl('icon-legend');
+    const uploadFromModalBtn = getEl('upload-from-modal-btn');
+
+    createChartBtn.addEventListener('click', () => {
+        const count = parseInt(charCountInput.value, 10);
+        if (count > 0 && count <= 15) {
+            initializeState(count);
+            renderChart();
+        } else {
+            alert('1から15までの数値を入力してください。');
+        }
+    });
+
+    imageUploadInput.addEventListener('change', e => {
+        if (!e.target.files[0]) return;
+        const reader = new FileReader();
+        reader.onload = event => {
+            if (currentEdit.type === 'icon') {
+                state.icons[currentEdit.index] = event.target.result;
+                charSelectModal.classList.remove('visible');
+                renderChart();
+            }
+        };
+        reader.readAsDataURL(e.target.files[0]);
+    });
+    
+    matchupModal.addEventListener('click', e => { if (e.target === matchupModal) matchupModal.classList.remove('visible'); });
+    charSelectModal.addEventListener('click', e => { if (e.target === charSelectModal) charSelectModal.classList.remove('visible'); });
+    uploadFromModalBtn.addEventListener('click', () => imageUploadInput.click());
+
+    saveBtn.addEventListener('click', () => {
+        html2canvas(getEl('chart-section'), { backgroundColor: '#1e1e1e', scale: 2 }).then(canvas => {
+            const link = document.createElement('a');
+            link.download = 'aishou-hyou.png';
+            link.href = canvas.toDataURL();
+            link.click();
+        });
+    });
+
+    function initializeState(count) {
+        // count引数がある場合（再作成ボタン）は、以前のロジックで新しい表を作成
+        if (count) {
+            state = { charCount: count, icons: {}, distributions: { other: 30 }, matchups: {}, otherMatchups: {} };
+            const remainingDist = 70;
+            const baseDist = Math.floor(remainingDist / count);
+            const remainder = remainingDist % count;
+            for (let i = 0; i < count; i++) {
+                state.distributions[i] = baseDist + (i < remainder ? 1 : 0);
+            }
+            // 再計算して other を正しく設定
+            computeOtherDistribution();
+        } else { // count引数がない場合（初回起動時）は、デフォルトキャラクターを読み込む
+            const defaultCount = DEFAULT_CHARACTERS.length;
+            state = { charCount: defaultCount, icons: {}, distributions: {}, matchups: {}, otherMatchups: {} };
+            
+            let charactersDistSum = 0;
+            DEFAULT_CHARACTERS.forEach((char, index) => {
+                state.icons[index] = char.src;
+                state.distributions[index] = char.distribution;
+                charactersDistSum += char.distribution;
+            });
+            
+            state.distributions.other = 100 - charactersDistSum;
+            charCountInput.value = defaultCount; // キャラ数入力欄の数値を更新
+            // 念のため再計算
+            computeOtherDistribution();
+        }
+    }
+
+    function createModalOptions() {
+        const matchupModalContent = matchupModal.querySelector('.modal-content');
+        matchupModalContent.innerHTML = '';
+        ICONS.forEach(icon => {
+            const option = document.createElement('div');
+            option.className = 'modal-option';
+            option.textContent = icon;
+            option.addEventListener('click', () => handleModalSelection(icon));
+            matchupModalContent.appendChild(option);
+        });
+
+        const presetGrid = getEl('preset-char-grid');
+        presetGrid.innerHTML = '';
+        PRESET_IMAGES.forEach(src => {
+            const iconDiv = document.createElement('div');
+            iconDiv.className = 'preset-char-icon';
+            const img = document.createElement('img');
+            img.src = src;
+            iconDiv.appendChild(img);
+            iconDiv.addEventListener('click', () => {
+                if (currentEdit.type === 'icon') {
+                    state.icons[currentEdit.index] = src;
+                    charSelectModal.classList.remove('visible');
+                    renderChart();
+                }
+            });
+            presetGrid.appendChild(iconDiv);
+        });
+    }
+
+    function renderLegend() {
+        legendContainer.innerHTML = '';
+        Object.entries(COMPATIBILITY_MAP).forEach(([icon, value]) => {
+            const item = document.createElement('div');
+            item.className = 'legend-item';
+            item.innerHTML = `<span>${icon}</span>: <span>${value}%</span>`;
+            legendContainer.appendChild(item);
+        });
+    }
+
+    function renderChart() {
+        chartContainer.innerHTML = '';
+        const { charCount } = state;
+        const gridColumns = charCount + 3;
+        chartContainer.style.gridTemplateColumns = `repeat(${gridColumns}, var(--cell-size))`;
+
+        chartContainer.appendChild(createCell({ text: '分布', className: 'header-text' }));
+        for (let i = 0; i < charCount; i++) chartContainer.appendChild(createDistributionCell(i));
+        chartContainer.appendChild(createDistributionCell('other'));
+        chartContainer.appendChild(createCell({}));
+        updateTotalDistribution();
+
+        chartContainer.appendChild(createCell({}));
+        for (let i = 0; i < charCount; i++) chartContainer.appendChild(createIconCell(i));
+        chartContainer.appendChild(createCell({ text: 'その他', className: 'header-text' }));
+        chartContainer.appendChild(createCell({ text: '総合勝率', className: 'header-text' }));
+
+        for (let r = 0; r < charCount; r++) {
+            chartContainer.appendChild(createIconCell(r, true));
+            for (let c = 0; c < charCount; c++) chartContainer.appendChild(createMatchupCell(r, c));
+            chartContainer.appendChild(createOtherMatchupCell(r));
+            chartContainer.appendChild(createWinRateCell(r));
+        }
+    }
+
+    function updateTotalDistribution() {
+        const total = Object.values(state.distributions).reduce((sum, val) => sum + Number(val || 0), 0);
+        distTotalEl.textContent = `合計分布: ${total.toFixed(0)}%`;
+        distTotalEl.classList.toggle('error', Math.abs(total - 100) > 0.1);
+    }
+
+    // 自動で 'other' を計算して 100% になるようにする
+    function computeOtherDistribution() {
+        const sum = Object.entries(state.distributions).reduce((s, [k, v]) => {
+            if (k === 'other') return s;
+            return s + Number(v || 0);
+        }, 0);
+        const otherVal = Math.max(0, 100 - sum);
+        state.distributions.other = otherVal;
+    }
+
+    function createCell({ text = '', className = '', content, onClick } = {}) {
+        const cell = document.createElement('div');
+        cell.className = `grid-cell ${className}`;
+        if (text) cell.textContent = text;
+        if (content) cell.appendChild(content);
+        if (onClick) cell.addEventListener('click', onClick);
+        return cell;
+    }
+
+    function createDistributionCell(index) {
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.className = 'distribution-input';
+        input.value = state.distributions[index] || '';
+        if (index === 'other') {
+            input.readOnly = true;
+            input.title = '他の分布から自動計算されます';
+        } else {
+            input.addEventListener('input', e => {
+                state.distributions[index] = e.target.value;
+                computeOtherDistribution();
+                renderChart();
+            });
+        }
+        return createCell({ content: input });
+    }
+
+    function createIconCell(index, isHeader = false) {
+        const iconSrc = state.icons[index];
+        const content = document.createElement(iconSrc ? 'img' : 'span');
+        if (iconSrc) content.src = iconSrc; else content.textContent = '+';
+        const cell = createCell({ content, className: 'char-icon-slot' });
+        if (!isHeader) {
+            cell.addEventListener('click', () => {
+                currentEdit = { type: 'icon', index };
+                charSelectModal.classList.add('visible');
+            });
+        }
+        return cell;
+    }
+
+    function createMatchupCell(r, c) {
+        if (r === c) return createCell({ text: '-', className: 'data-cell disabled' });
+        const icon = state.matchups[`${r}-${c}`] || DEFAULT_ICON;
+        return createCell({ text: icon, className: 'data-cell', onClick: () => {
+            currentEdit = { type: 'matchup', row: r, col: c };
+            matchupModal.classList.add('visible');
+        }});
+    }
+    
+    function createOtherMatchupCell(r) {
+        const icon = state.otherMatchups[r] || DEFAULT_ICON;
+        return createCell({ text: icon, className: 'data-cell other-cell', onClick: () => {
+            currentEdit = { type: 'otherMatchup', row: r };
+            matchupModal.classList.add('visible');
+        }});
+    }
+
+    function createWinRateCell(r) {
+        let weightedSum = 0, totalDist = 0;
+        Object.entries(state.distributions).forEach(([key, distStr]) => {
+            const dist = parseFloat(distStr || 0);
+            if (dist <= 0) return;
+            let icon;
+            if (key === 'other') {
+                icon = state.otherMatchups[r] || DEFAULT_ICON;
+            } else {
+                const c = parseInt(key, 10);
+                if (r === c) return;
+                icon = state.matchups[`${r}-${c}`] || DEFAULT_ICON;
+            }
+            weightedSum += COMPATIBILITY_MAP[icon] * dist;
+            totalDist += dist;
+        });
+        const winRateText = totalDist > 0 ? `${(weightedSum / totalDist).toFixed(1)}%` : '-%';
+        return createCell({ text: winRateText, className: 'win-rate-cell' });
+    }
+
+    function handleModalSelection(icon) {
+        const { type, row, col } = currentEdit;
+        if (type === 'matchup') {
+            state.matchups[`${row}-${col}`] = icon;
+            const oppositeIcon = Object.keys(COMPATIBILITY_MAP).find(key => COMPATIBILITY_MAP[key] === 100 - COMPATIBILITY_MAP[icon]) || DEFAULT_ICON;
+            state.matchups[`${col}-${row}`] = oppositeIcon;
+        } else if (type === 'otherMatchup') {
+            state.otherMatchups[row] = icon;
+        }
+        matchupModal.classList.remove('visible');
+        renderChart();
+    }
+
+    function start() {
+        initializeState(); // 引数なしで呼び出し、デフォルトキャラクターを読み込む
+        createModalOptions();
+        renderLegend();
+        renderChart();
+    }
+    start();
+});
+</script>
+</body>
+</html>
+
