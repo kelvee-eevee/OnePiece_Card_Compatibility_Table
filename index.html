@@ -87,6 +87,13 @@
     /* Slightly increase Twitter button prominence while preserving shape */
     .twitter-share-button { box-shadow: 0 2px 6px rgba(29,161,242,0.12); }
         .twitter-share-button:hover { opacity: 0.95; }
+        /* Larger / native-feel styles for data-size="large" */
+        .twitter-share-button[data-size="large"] {
+            background: linear-gradient(180deg,#1da1f2,#1a91da);
+            padding: 0.85rem 1.1rem; font-size: 1.15rem; border-radius: 10px; min-height: 48px;
+            box-shadow: 0 6px 18px rgba(29,161,242,0.12);
+        }
+        .twitter-share-button[data-size="large"] svg { color: #fff; }
         .modal-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.7); display: none; justify-content: center; align-items: center;
@@ -184,8 +191,16 @@
              <h2>操作</h2>
             <div class="action-row">
                 <button id="save-btn">画像として保存</button>
-                <!-- Twitter-style share button (will be wired to existing capture/upload flow) -->
-                <a id="tweet-btn" href="#" class="twitter-share-button">ツイート</a>
+                <!-- Twitter-style share button (large) - keep anchor so widgets.js can enhance it but include inner structure so it looks correct without the script -->
+                <a id="tweet-btn" href="#" class="twitter-share-button" role="button" aria-label="ツイート" data-size="large">
+                    <!-- Inline bird + text so the button looks native even before widgets.js runs -->
+                    <span style="display:inline-flex;align-items:center;gap:8px;">
+                        <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="currentColor" style="filter: drop-shadow(0 1px 0 rgba(0,0,0,0.15));">
+                            <path d="M22.46 6c-.77.35-1.6.58-2.46.69a4.3 4.3 0 0 0 1.88-2.37 8.6 8.6 0 0 1-2.72 1.04 4.28 4.28 0 0 0-7.3 3.9A12.14 12.14 0 0 1 3.15 4.6a4.28 4.28 0 0 0 1.32 5.71c-.66-.02-1.28-.2-1.82-.5v.05c0 2.1 1.5 3.85 3.5 4.25-.34.1-.7.15-1.07.15-.26 0-.5-.03-.74-.07.5 1.6 2 2.77 3.76 2.8A8.58 8.58 0 0 1 2 19.54a12.1 12.1 0 0 0 6.56 1.92c7.88 0 12.2-6.53 12.2-12.2v-.56A8.72 8.72 0 0 0 22.46 6z"/>
+                        </svg>
+                        <span style="font-weight:700;">ツイート</span>
+                    </span>
+                </a>
             </div>
         </div>
     </main>
@@ -247,6 +262,31 @@ document.addEventListener('DOMContentLoaded', () => {
     const saveBtn = getEl('save-btn');
     const legendContainer = getEl('icon-legend');
     const uploadFromModalBtn = getEl('upload-from-modal-btn');
+
+    // Show a visible warning if the page is opened via file:// which often causes
+    // html2canvas/cors/canvas security errors. Advise running a local HTTP server.
+    function showFileProtocolWarningIfNeeded() {
+        try {
+            if (location && location.protocol === 'file:') {
+                const existing = document.getElementById('security-warning');
+                if (existing) return;
+                const warn = document.createElement('div');
+                warn.id = 'security-warning';
+                warn.style.background = '#3c2b2b';
+                warn.style.color = '#ffd';
+                warn.style.padding = '10px 14px';
+                warn.style.borderRadius = '8px';
+                warn.style.margin = '0 0 12px 0';
+                warn.style.fontSize = '0.95rem';
+                warn.innerHTML = '<strong>注意:</strong> このページをファイルとして直接開いています。ブラウザのセキュリティにより画像生成が失敗することがあります。' +
+                    '<br>ページをローカルHTTPサーバーで配信してから再試行してください。例（PowerShell / コマンドプロンプト）:' +
+                    '<pre style="margin:6px 0 0;background:#222;padding:8px;border-radius:6px;color:#fff;">python -m http.server 8000</pre>' +
+                    '<div style="opacity:0.9;margin-top:6px;">その後ブラウザで <code>http://localhost:8000/</code> を開いてください。</div>';
+                const container = document.querySelector('.container');
+                if (container) container.insertBefore(warn, container.firstChild);
+            }
+        } catch (e) { /* ignore */ }
+    }
 
     createChartBtn.addEventListener('click', () => {
         const count = parseInt(charCountInput.value, 10);
@@ -366,20 +406,34 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Tweet button: try to upload image to Imgur (optional) then open Twitter intent with text+url+hashtag
-    const tweetBtn = getEl('tweet-btn');
-    tweetBtn.addEventListener('click', async (evt) => {
+    // Delegate clicks on the tweet anchor so we remain robust if Twitter's widgets.js replaces the node.
+    document.addEventListener('click', async (evt) => {
+        const anchor = evt.target.closest ? evt.target.closest('#tweet-btn') : null;
+        if (!anchor) return;
         evt.preventDefault();
+
         // Generate image blob
         let blob;
         try {
             blob = await captureFullChart();
         } catch (err) {
-            alert('画像の生成に失敗しました: ' + (err && err.message ? err.message : err));
+            const msg = (err && err.message) ? err.message : String(err);
+            // Detect common security/insecure error and show actionable instructions
+            if (/insecure/i.test(msg) || (err && err.name === 'SecurityError')) {
+                alert('画像の生成に失敗しました: ブラウザのセキュリティ制限の可能性があります。\n\n' +
+                    'このページを直接（file://）で開いている場合は、ローカルHTTPサーバーで配信して再試行してください。\n\n' +
+                    '例（PowerShell / コマンドプロンプト）：\npython -m http.server 8000\n\n' +
+                    'その後ブラウザで http://localhost:8000/ を開いてください。');
+                // Also show in-page warning to help the user
+                showFileProtocolWarningIfNeeded();
+                return;
+            }
+            alert('画像の生成に失敗しました: ' + msg);
             return;
         }
 
         // Ask for optional Imgur Client-ID to upload
-    const clientId = prompt(`Imgurに自動アップロードする場合、Client-IDを入力してください。\n（未入力の場合はツイート画面を開きます）`);
+        const clientId = prompt(`Imgurに自動アップロードする場合、Client-IDを入力してください。\n（未入力の場合はツイート画面を開きます）`);
         let imageUrl = null;
         if (clientId) {
             try {
@@ -412,14 +466,12 @@ document.addEventListener('DOMContentLoaded', () => {
         window.open(twitterUrl, '_blank');
     });
 
-        // Load Twitter widgets script (optional — provides standard styling for anchor)
-        (function(d, s, id) {
-            if (d.getElementById(id)) return;
-            var js = d.createElement(s); js.id = id;
-            js.src = "https://platform.twitter.com/widgets.js";
-            var fjs = d.getElementsByTagName(s)[0];
-            fjs.parentNode.insertBefore(js, fjs);
-        }(document, 'script', 'twitter-wjs'));
+        // NOTE: intentionally not loading platform.twitter.com/widgets.js by default.
+        // The widgets script will rewrite/replace the anchor and insert a platform-specific
+        // widget (in your environment it produced a small pill-like button). To keep the
+        // custom large bird+label button that matches the '保存' control, we avoid loading
+        // the widgets script. If you later want the official Twitter/X widget, we can
+        // make this opt-in.
 
     function initializeState(count) {
         // count引数がある場合（再作成ボタン）は、以前のロジックで新しい表を作成
