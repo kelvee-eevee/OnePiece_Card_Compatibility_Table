@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>相性表メーカー (デフォルトキャラ対応版)</title>
+    <title>ワンピカ相性表メーカー</title>
     <!-- html2canvasライブラリをインポートし、画像保存を可能にします -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
@@ -153,7 +153,8 @@
 </head>
 <body>
 <div class="container">
-    <h1>相性表メーカー</h1>
+    <h1>ワンピカ相性表メーカー</h1>
+    <div id="site-admin" style="text-align:center;margin-top:6px;margin-bottom:14px;color:#cbd5c9;font-size:0.95rem;">管理人: <a href="https://twitter.com/kelvee_eeevee" target="_blank" rel="noopener" style="color:#9fe1ff;text-decoration:none;">@kelvee_eevee</a></div>
     <main>
         <div class="config-section">
             <h2>キャラクター数を指定</h2>
@@ -363,6 +364,27 @@ document.addEventListener('DOMContentLoaded', () => {
     // Replace the header/title text in the clone so saved image shows project title
     const headerEl = clone.querySelector('.distribution-header h2');
     if (headerEl) headerEl.textContent = 'ワンピカ相性表メーカー';
+    // Add watermark text to the cloned header area so it's present only in the exported image
+    try {
+        const watermark = document.createElement('div');
+        watermark.textContent = '@kelvee_eevee';
+        watermark.style.position = 'absolute';
+        watermark.style.right = '12px';
+        watermark.style.top = '8px';
+        watermark.style.fontSize = '14px';
+        watermark.style.fontWeight = '700';
+        watermark.style.color = '#ffffff';
+        watermark.style.opacity = '0.95';
+        watermark.style.background = 'rgba(0,0,0,0.25)';
+        watermark.style.padding = '4px 8px';
+        watermark.style.borderRadius = '8px';
+        watermark.style.pointerEvents = 'none';
+        watermark.style.zIndex = '9999';
+        // Place watermark inside the cloned header container if present, otherwise inside the clone
+        const headerContainer = clone.querySelector('.distribution-header') || clone;
+        headerContainer.style.position = headerContainer.style.position || 'relative';
+        headerContainer.appendChild(watermark);
+    } catch (e) { /* ignore */ }
 
     // Try to embed any external images found in the clone to reduce CORS/taint risks
     await embedExternalImages(clone);
@@ -432,37 +454,10 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Ask for optional Imgur Client-ID to upload
-        const clientId = prompt(`Imgurに自動アップロードする場合、Client-IDを入力してください。\n（未入力の場合はツイート画面を開きます）`);
-        let imageUrl = null;
-        if (clientId) {
-            try {
-                const form = new FormData();
-                form.append('image', blob);
-                const res = await fetch('https://api.imgur.com/3/image', {
-                    method: 'POST',
-                    headers: { Authorization: 'Client-ID ' + clientId },
-                    body: form
-                });
-                const data = await res.json();
-                if (data && data.success && data.data && data.data.link) {
-                    imageUrl = data.data.link;
-                } else {
-                    alert('Imgurへのアップロードに失敗しました。ツイート画面を開きます。');
-                }
-            } catch (err) {
-                alert('Imgurアップロード中にエラーが発生しました。ツイート画面を開きます。');
-            }
-        }
-
+        // Open Twitter intent with the page URL (Imgur upload removed)
         const text = encodeURIComponent('相性表を作成しました #ワンピカ相性表メーカー');
         const pageUrl = encodeURIComponent(window.location.href);
-        let twitterUrl;
-        if (imageUrl) {
-            twitterUrl = `https://twitter.com/intent/tweet?text=${text}&url=${encodeURIComponent(imageUrl)}`;
-        } else {
-            twitterUrl = `https://twitter.com/intent/tweet?text=${text}&url=${pageUrl}`;
-        }
+        const twitterUrl = `https://twitter.com/intent/tweet?text=${text}&url=${pageUrl}`;
         window.open(twitterUrl, '_blank');
     });
 
