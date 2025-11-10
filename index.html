@@ -227,25 +227,37 @@
 <input type="file" id="image-upload-input" class="hidden" accept="image/*">
 
 <script>
-document.addEventListener('DOMContentLoaded', () => {
-    const COMPATIBILITY_MAP = { '⭐︎': 80, '◎': 70, '◯': 60, 'ー': 50, '△': 40, '▲': 30, '×': 20 };
-    const ICONS = Object.keys(COMPATIBILITY_MAP);
-    const DEFAULT_ICON = 'ー';
+    document.addEventListener('DOMContentLoaded', () => {
+    // Expanded compatibility map: 13 choices from 20% to 80% by 5%
+    const COMPATIBILITY_MAP = {
+        '80': 80, '75': 75, '70': 70, '65': 65, '60': 60, '55': 55, '50': 50,
+        '45': 45, '40': 40, '35': 35, '30': 30, '25': 25, '20': 20
+    };
+    // Display emoji/symbol for each percent key. When emojis are not unique enough
+    // we show the numeric percent under the emoji in the UI.
+    const ICON_DISPLAY = {
+        '80': '☆', '75': '☆', '70': '◎', '65': '◎', '60': '◯', '55': '◯', '50': 'ー',
+        '45': '△', '40': '△', '35': '▲', '30': '▲', '25': '×', '20': '×'
+    };
+    // Keys sorted descending by percent so modal shows highest to lowest
+    const ICONS = Object.keys(COMPATIBILITY_MAP).sort((a,b) => Number(b) - Number(a));
+    const DEFAULT_KEY = '50';
+    const DEFAULT_SYMBOL = 'ー';
     
     // プリセット画像のURLリスト（ローカルimgフォルダのファイルを使用）
     const PRESET_IMAGES = [
         'img/赤青エース.png', 'img/黒イム.png', 'img/緑ゾロ.png', 'img/赤紫ロジャー.png', 
-        'img/赤緑ルフィ.png',  'img/赤黒サボ.png', 'img/青紫ルフィ.png',
-        'img/赤レイリー.png', 'img/赤黄ベティ.png', 'img/緑ボニー.png', 
+        'img/赤黒サボ.png', 'img/青黄ナミ.png', 'img/青紫ルフィ.png', 'img/緑ボニー.png', 
+        'img/赤青ビビ.png', 'img/赤黄ベティ.png', 'img/赤レイリー.png', 'img/赤緑ルフィ.png', 
     ];
 
     // ===== デフォルトキャラクター設定 =====
     // ここの配列を編集すると、起動時に表示されるキャラクターと分布が変わります。
     const DEFAULT_CHARACTERS = [
-        { src: PRESET_IMAGES[0], distribution: 20 },
-        { src: PRESET_IMAGES[1], distribution: 20 },
-        { src: PRESET_IMAGES[2], distribution: 20 },
-        { src: PRESET_IMAGES[3], distribution: 15 }
+        { src: PRESET_IMAGES[0], distribution: 25 },
+        { src: PRESET_IMAGES[1], distribution: 18 },
+        { src: PRESET_IMAGES[2], distribution: 13 },
+        { src: PRESET_IMAGES[3], distribution: 9 }
     ];
     // ===================================
 
@@ -555,32 +567,23 @@ document.addEventListener('DOMContentLoaded', () => {
     function createModalOptions() {
         const matchupModalContent = matchupModal.querySelector('.modal-content');
         matchupModalContent.innerHTML = '';
-        ICONS.forEach((icon, idx) => {
+        // Let CSS grid place items naturally; each option shows an emoji and the percent below it
+        ICONS.forEach((key) => {
             const option = document.createElement('div');
             option.className = 'modal-option';
-            // Position: first 3 icons occupy row 1 (columns 1-3), next 4 occupy row 2 (columns 1-4)
-            if (idx < 3) {
-                // center the first 3 items on the top row by placing them in columns 2..4
-                option.style.gridColumn = String(idx + 2);
-                option.style.gridRow = '1';
-            } else {
-                // place remaining 4 across columns 1..4 on the second row
-                option.style.gridColumn = String((idx - 3) + 1);
-                option.style.gridRow = '2';
-            }
             const label = document.createElement('div');
-            label.textContent = icon;
+            label.textContent = ICON_DISPLAY[key] || DEFAULT_SYMBOL;
             label.style.fontSize = '1.6rem';
             const pct = document.createElement('div');
-            const pctVal = COMPATIBILITY_MAP[icon] || 50;
+            const pctVal = COMPATIBILITY_MAP[key] || Number(key) || 50;
             pct.textContent = pctVal + '%';
             pct.style.fontSize = '0.85rem';
             pct.style.marginTop = '4px';
-            pct.style.opacity = '0.9';
+            pct.style.opacity = '0.95';
             pct.style.color = '#ffd';
             option.appendChild(label);
             option.appendChild(pct);
-            option.addEventListener('click', () => handleModalSelection(icon));
+            option.addEventListener('click', () => handleModalSelection(key));
             matchupModalContent.appendChild(option);
         });
 
@@ -607,10 +610,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderLegend() {
         legendContainer.innerHTML = '';
-        Object.entries(COMPATIBILITY_MAP).forEach(([icon, value]) => {
+        Object.entries(COMPATIBILITY_MAP).sort((a,b)=>Number(b[1])-Number(a[1])).forEach(([key, value]) => {
             const item = document.createElement('div');
             item.className = 'legend-item';
-            item.innerHTML = `<span>${icon}</span>: <span>${value}%</span>`;
+            const symbol = ICON_DISPLAY[key] || DEFAULT_SYMBOL;
+            item.innerHTML = `<span>${symbol}</span>: <span>${value}%</span>`;
             legendContainer.appendChild(item);
         });
     }
@@ -878,17 +882,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function createMatchupCell(r, c) {
         // For same-character matchup, show the default icon symbol (ー) instead of a dash
-        if (r === c) return createCell({ text: DEFAULT_ICON, className: 'data-cell disabled' });
-        const icon = state.matchups[`${r}-${c}`] || DEFAULT_ICON;
-        return createCell({ text: icon, className: 'data-cell', onClick: () => {
+        if (r === c) {
+            const wrapper = document.createElement('div');
+            const sym = document.createElement('div'); sym.textContent = DEFAULT_SYMBOL; sym.style.fontSize = '1.2rem';
+            const pct = document.createElement('div'); pct.textContent = (COMPATIBILITY_MAP[DEFAULT_KEY] || 50) + '%'; pct.style.fontSize = '0.75rem'; pct.style.marginTop = '4px'; pct.style.opacity = '0.9'; pct.style.color = '#ffd';
+            wrapper.appendChild(sym); wrapper.appendChild(pct);
+            return createCell({ content: wrapper, className: 'data-cell disabled' });
+        }
+        const key = state.matchups[`${r}-${c}`] || DEFAULT_KEY;
+        const wrapper = document.createElement('div');
+        const sym = document.createElement('div'); sym.textContent = ICON_DISPLAY[key] || DEFAULT_SYMBOL; sym.style.fontSize = '1.2rem';
+        const pct = document.createElement('div'); pct.textContent = (COMPATIBILITY_MAP[key] || Number(key) || 50) + '%'; pct.style.fontSize = '0.75rem'; pct.style.marginTop = '4px'; pct.style.opacity = '0.9'; pct.style.color = '#ffd';
+        wrapper.appendChild(sym); wrapper.appendChild(pct);
+        return createCell({ content: wrapper, className: 'data-cell', onClick: () => {
             currentEdit = { type: 'matchup', row: r, col: c };
             matchupModal.classList.add('visible');
         }});
     }
     
     function createOtherMatchupCell(r) {
-        const icon = state.otherMatchups[r] || DEFAULT_ICON;
-        return createCell({ text: icon, className: 'data-cell other-cell', onClick: () => {
+        const key = state.otherMatchups[r] || DEFAULT_KEY;
+        const wrapper = document.createElement('div');
+        const sym = document.createElement('div'); sym.textContent = ICON_DISPLAY[key] || DEFAULT_SYMBOL; sym.style.fontSize = '1.0rem';
+        const pct = document.createElement('div'); pct.textContent = (COMPATIBILITY_MAP[key] || Number(key) || 50) + '%'; pct.style.fontSize = '0.75rem'; pct.style.marginTop = '4px'; pct.style.opacity = '0.9'; pct.style.color = '#ffd';
+        wrapper.appendChild(sym); wrapper.appendChild(pct);
+        return createCell({ content: wrapper, className: 'data-cell other-cell', onClick: () => {
             currentEdit = { type: 'otherMatchup', row: r };
             matchupModal.classList.add('visible');
         }});
@@ -901,13 +919,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (dist <= 0) return;
             let icon;
             if (key === 'other') {
-                icon = state.otherMatchups[r] || DEFAULT_ICON;
+                icon = state.otherMatchups[r] || DEFAULT_KEY;
             } else {
                 const c = parseInt(key, 10);
                 if (r === c) return;
-                icon = state.matchups[`${r}-${c}`] || DEFAULT_ICON;
+                icon = state.matchups[`${r}-${c}`] || DEFAULT_KEY;
             }
-            weightedSum += COMPATIBILITY_MAP[icon] * dist;
+            weightedSum += (COMPATIBILITY_MAP[icon] || Number(icon) || 50) * dist;
             totalDist += dist;
         });
         const winRateText = totalDist > 0 ? `${(weightedSum / totalDist).toFixed(1)}%` : '-%';
@@ -917,8 +935,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleModalSelection(icon) {
         const { type, row, col } = currentEdit;
         if (type === 'matchup') {
+            // 'icon' here is the key (e.g. '70'). Store keys in state.
             state.matchups[`${row}-${col}`] = icon;
-            const oppositeIcon = Object.keys(COMPATIBILITY_MAP).find(key => COMPATIBILITY_MAP[key] === 100 - COMPATIBILITY_MAP[icon]) || DEFAULT_ICON;
+            const oppositeVal = 100 - (COMPATIBILITY_MAP[icon] || Number(icon) || 50);
+            const oppositeIcon = Object.keys(COMPATIBILITY_MAP).find(key => (COMPATIBILITY_MAP[key] || Number(key)) === oppositeVal) || DEFAULT_KEY;
             state.matchups[`${col}-${row}`] = oppositeIcon;
         } else if (type === 'otherMatchup') {
             state.otherMatchups[row] = icon;
