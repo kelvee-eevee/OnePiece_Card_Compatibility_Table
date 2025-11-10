@@ -807,7 +807,7 @@
         PRESET_IMAGES.forEach(src => {
             const iconDiv = document.createElement('div');
             iconDiv.className = 'preset-char-icon';
-            // arrange icon + caption vertically
+            // arrange icon vertically (no caption)
             iconDiv.style.display = 'flex';
             iconDiv.style.flexDirection = 'column';
             iconDiv.style.alignItems = 'center';
@@ -816,20 +816,9 @@
             // Only set crossOrigin for remote images (http/https or protocol-relative).
             if (/^(https?:)?\/\//i.test(src)) img.crossOrigin = 'anonymous';
             img.src = src;
-            try { img.alt = getFilenameFromSrc(src); } catch (e) {}
+            // Keep alt minimal to avoid showing filenames in the UI
+            try { img.alt = ''; } catch (e) {}
             iconDiv.appendChild(img);
-
-            const caption = document.createElement('div');
-            caption.style.fontSize = '0.72rem';
-            caption.style.color = '#ddd';
-            caption.style.marginTop = '6px';
-            caption.style.maxWidth = '64px';
-            caption.style.textAlign = 'center';
-            caption.style.whiteSpace = 'nowrap';
-            caption.style.overflow = 'hidden';
-            caption.style.textOverflow = 'ellipsis';
-            caption.textContent = getFilenameFromSrc(src);
-            iconDiv.appendChild(caption);
 
             iconDiv.addEventListener('click', () => {
                 if (currentEdit.type === 'icon') {
@@ -838,7 +827,7 @@
                     renderChart();
                 }
             });
-            iconDiv.title = getFilenameFromSrc(src);
+            // Do not set title to avoid tooltip showing the filename
             presetGrid.appendChild(iconDiv);
         });
     }
