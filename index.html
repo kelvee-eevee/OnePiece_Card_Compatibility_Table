@@ -270,6 +270,39 @@
     ];
     // ===================================
 
+    // Helper: extract filename (basename) from a src string. Keeps extension.
+    function getFilenameFromSrc(src) {
+        if (!src) return '';
+        try {
+            if (/^data:/i.test(src)) return 'data:image';
+            let s = src.split('?')[0].split('#')[0];
+            if (s.endsWith('/')) s = s.slice(0, -1);
+            const parts = s.split('/');
+            return parts[parts.length - 1] || s;
+        } catch (e) { return src; }
+    }
+
+    // ===== デフォルトの相性プリセット (画像ファイル名ベースで指定) =====
+    // Use filenames (as returned by getFilenameFromSrc) joined by '|' as keys, e.g.
+    // { '赤青エース.png|黒イム.png': '70' }
+    const DEFAULT_MATCHUPS_BY_NAME = {
+        // Imu (黒イム.png) beats Zoro (緑ゾロ.png) 75%
+        '黒イム.png|緑ゾロ.png': '75',
+        // Zoro (緑ゾロ.png) beats Ace (赤青エース.png) 55%
+        '緑ゾロ.png|赤青エース.png': '55',
+        // Ace (赤青エース.png) beats Roger (赤紫ロジャー.png) 60%
+        '赤青エース.png|赤紫ロジャー.png': '55',
+        // Zoro (緑ゾロ.png) beats Roger (赤紫ロジャー.png) 60%
+        '緑ゾロ.png|赤紫ロジャー.png': '60',
+        // Roger (赤紫ロジャー.png) beats Imu (黒イム.png) 60%
+        '赤紫ロジャー.png|黒イム.png': '55',
+    };
+
+    // Default "other" matchup per filename
+    const DEFAULT_OTHER_BY_NAME = {
+        // '赤青エース.png': '55'
+    };
+
     let state = {};
     let currentEdit = {};
 
@@ -521,6 +554,36 @@
             charCountInput.value = defaultCount; // キャラ数入力欄の数値を更新
             // 念のため再計算
             computeOtherDistribution();
+
+            // Populate initial matchups based on filenames (if DEFAULT_MATCHUPS_BY_NAME / DEFAULT_OTHER_BY_NAME provided)
+            try {
+                const nameToIndex = {};
+                for (let i = 0; i < defaultCount; i++) {
+                    const name = getFilenameFromSrc(state.icons[i] || '');
+                    if (name) nameToIndex[name] = i;
+                }
+
+                Object.entries(DEFAULT_MATCHUPS_BY_NAME).forEach(([key, val]) => {
+                    if (!key) return;
+                    const parts = key.split('|').map(s => s.trim()).filter(Boolean);
+                    if (parts.length < 2) return;
+                    const n1 = parts[0];
+                    const n2 = parts[1];
+                    const i1 = nameToIndex[n1];
+                    const i2 = nameToIndex[n2];
+                    if (i1 === undefined || i2 === undefined) return;
+                    state.matchups[`${i1}-${i2}`] = val;
+                    // compute opposite
+                    const oppositeVal = 100 - (COMPATIBILITY_MAP[val] || Number(val) || 50);
+                    const oppositeIcon = Object.keys(COMPATIBILITY_MAP).find(k => (COMPATIBILITY_MAP[k] || Number(k)) === oppositeVal) || DEFAULT_KEY;
+                    state.matchups[`${i2}-${i1}`] = oppositeIcon;
+                });
+
+                Object.entries(DEFAULT_OTHER_BY_NAME).forEach(([name, val]) => {
+                    const idx = nameToIndex[name];
+                    if (idx !== undefined) state.otherMatchups[idx] = val;
+                });
+            } catch (e) { /* non-fatal */ }
         }
     }
 
@@ -601,11 +664,30 @@
         PRESET_IMAGES.forEach(src => {
             const iconDiv = document.createElement('div');
             iconDiv.className = 'preset-char-icon';
+            // arrange icon + caption vertically
+            iconDiv.style.display = 'flex';
+            iconDiv.style.flexDirection = 'column';
+            iconDiv.style.alignItems = 'center';
+
             const img = document.createElement('img');
             // Only set crossOrigin for remote images (http/https or protocol-relative).
             if (/^(https?:)?\/\//i.test(src)) img.crossOrigin = 'anonymous';
             img.src = src;
+            try { img.alt = getFilenameFromSrc(src); } catch (e) {}
             iconDiv.appendChild(img);
+
+            const caption = document.createElement('div');
+            caption.style.fontSize = '0.72rem';
+            caption.style.color = '#ddd';
+            caption.style.marginTop = '6px';
+            caption.style.maxWidth = '64px';
+            caption.style.textAlign = 'center';
+            caption.style.whiteSpace = 'nowrap';
+            caption.style.overflow = 'hidden';
+            caption.style.textOverflow = 'ellipsis';
+            caption.textContent = getFilenameFromSrc(src);
+            iconDiv.appendChild(caption);
+
             iconDiv.addEventListener('click', () => {
                 if (currentEdit.type === 'icon') {
                     state.icons[currentEdit.index] = src;
@@ -613,6 +695,7 @@
                     renderChart();
                 }
             });
+            iconDiv.title = getFilenameFromSrc(src);
             presetGrid.appendChild(iconDiv);
         });
     }
@@ -879,8 +962,10 @@
             // Only set crossOrigin for remote images; local relative paths or data: should not set it
             if (/^(https?:)?\/\//i.test(iconSrc)) content.crossOrigin = 'anonymous';
             content.src = iconSrc;
+            try { content.alt = getFilenameFromSrc(iconSrc); } catch (e) { /* ignore */ }
         } else content.textContent = '+';
         const cell = createCell({ content, className: 'char-icon-slot' });
+        try { cell.title = getFilenameFromSrc(iconSrc); } catch (e) { /* ignore */ }
         // Allow editing the character by clicking the icon whether it's in the top row or the left column
         cell.addEventListener('click', () => {
             currentEdit = { type: 'icon', index };
