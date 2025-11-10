@@ -525,20 +525,163 @@
     function initializeState(count) {
         // count引数がある場合（再作成ボタン）は、以前のロジックで新しい表を作成
         if (count) {
-            // Auto-fill icons from PRESET_IMAGES and evenly distribute percentages
+            // Preserve previous state where possible by filename / index mapping
+            const prev = JSON.parse(JSON.stringify(state || {}));
+
+            // Create fresh skeleton
             state = { charCount: count, icons: {}, distributions: {}, matchups: {}, otherMatchups: {} };
             // Fill icons in order from PRESET_IMAGES (wrap if necessary)
             for (let i = 0; i < count; i++) {
                 state.icons[i] = PRESET_IMAGES[i % PRESET_IMAGES.length];
             }
-            // Evenly distribute 100% across characters; other becomes 0
-            const base = Math.floor(100 / count);
-            let remainder = 100 - base * count;
-            for (let i = 0; i < count; i++) {
-                state.distributions[i] = base + (remainder > 0 ? 1 : 0);
-                if (remainder > 0) remainder--;
+
+            // Start with empty per-character distributions. We'll copy preserved values below
+            // and allocate the remaining percent to newly added characters without exceeding 100%.
+            for (let i = 0; i < count; i++) state.distributions[i] = undefined;
+            state.distributions.other = undefined;
+
+            // Build name->index maps for prev and new states (for filename-based matching)
+            try {
+                const prevNameToIndex = {};
+                const newNameToIndex = {};
+                if (prev && prev.icons) {
+                    Object.entries(prev.icons).forEach(([k, v]) => {
+                        const name = getFilenameFromSrc(v || '');
+                        if (name) prevNameToIndex[name] = Number(k);
+                    });
+                }
+                Object.entries(state.icons).forEach(([k, v]) => {
+                    const name = getFilenameFromSrc(v || '');
+                    if (name) newNameToIndex[name] = Number(k);
+                });
+
+                // Copy distributions: prefer filename-match, then index-match. Leave unassigned slots undefined for now.
+                if (prev && prev.distributions) {
+                    Object.entries(prev.distributions).forEach(([k, v]) => {
+                        if (k === 'other') return; // handled below
+                        const idx = Number(k);
+                        const prevName = prev.icons && prev.icons[idx] ? getFilenameFromSrc(prev.icons[idx]) : null;
+                        if (prevName && newNameToIndex[prevName] !== undefined) {
+                            state.distributions[newNameToIndex[prevName]] = Number(v || 0);
+                        } else if (idx < count) {
+                            // same index exists in new state
+                            state.distributions[idx] = Number(v || 0);
+                        }
+                    });
+                    // preserve 'other' distribution if user set it previously (we'll respect it where possible)
+                    if (prev.distributions.other !== undefined) state.distributions.other = Number(prev.distributions.other || 0);
+                }
+
+                // Copy otherMatchups by filename then by index
+                if (prev && prev.otherMatchups) {
+                    Object.entries(prev.otherMatchups).forEach(([k, v]) => {
+                        const idx = Number(k);
+                        const prevName = prev.icons && prev.icons[idx] ? getFilenameFromSrc(prev.icons[idx]) : null;
+                        if (prevName && newNameToIndex[prevName] !== undefined) {
+                            state.otherMatchups[newNameToIndex[prevName]] = v;
+                        } else if (idx < count) {
+                            state.otherMatchups[idx] = v;
+                        }
+                    });
+                }
+
+                // Copy pairwise matchups: prefer filename mapping
+                if (prev && prev.matchups) {
+                    Object.entries(prev.matchups).forEach(([pair, val]) => {
+                        const parts = pair.split('-').map(s => Number(s));
+                        if (parts.length !== 2) return;
+                        const [r, c] = parts;
+                        const nameR = prev.icons && prev.icons[r] ? getFilenameFromSrc(prev.icons[r]) : null;
+                        const nameC = prev.icons && prev.icons[c] ? getFilenameFromSrc(prev.icons[c]) : null;
+                        if (nameR && nameC && newNameToIndex[nameR] !== undefined && newNameToIndex[nameC] !== undefined) {
+                            state.matchups[`${newNameToIndex[nameR]}-${newNameToIndex[nameC]}`] = val;
+                        } else if (r < count && c < count) {
+                            // fallback: same indices available
+                            state.matchups[`${r}-${c}`] = val;
+                        }
+                    });
+                }
+
+                // --- Ensure total distribution for characters never exceeds 100% when adding new characters ---
+                // Strategy:
+                // 1) Keep any preserved per-character values (copied above).
+                // 2) If prev.distributions.other was present, try to respect it; if that causes total>100,
+                //    scale down character values proportionally so (sum(chars) + other) == 100.
+                // 3) For newly added/unassigned character slots, allocate the remaining percentage evenly
+                //    (if any). If none remains, set them to 0.
+                {
+                    const assignedIndices = [];
+                    const unassignedIndices = [];
+                    for (let i = 0; i < count; i++) {
+                        if (state.distributions[i] !== undefined) assignedIndices.push(i);
+                        else unassignedIndices.push(i);
+                    }
+                    let assignedSum = assignedIndices.reduce((s, idx) => s + Number(state.distributions[idx] || 0), 0);
+                    const preservedOther = (prev && prev.distributions && prev.distributions.other !== undefined)
+                        ? Number(prev.distributions.other || 0) : undefined;
+
+                    if (preservedOther !== undefined) {
+                        // If assigned + preservedOther > 100, scale assigned values down to fit
+                        if (assignedSum + preservedOther > 100) {
+                            const capacity = Math.max(0, 100 - preservedOther);
+                            if (assignedSum > 0) {
+                                const factor = capacity / assignedSum;
+                                // scale and floor, then distribute remainder
+                                let acc = 0;
+                                assignedIndices.forEach(idx => {
+                                    const v = Math.floor(Number(state.distributions[idx] || 0) * factor);
+                                    state.distributions[idx] = v;
+                                    acc += v;
+                                });
+                                let rem = capacity - acc;
+                                let k = 0;
+                                while (rem > 0 && k < assignedIndices.length) {
+                                    state.distributions[assignedIndices[k]] += 1;
+                                    rem--; k++;
+                                }
+                            }
+                        }
+                        // Allocate 70% of the previous 'other' to newly added characters (split evenly).
+                        // The remaining 30% stays as 'other'. This prevents new chars getting 0%.
+                        const numNew = unassignedIndices.length;
+                        const allocateFromOther = Math.floor((preservedOther * 50) / 100); // integer percent
+                        if (numNew > 0 && allocateFromOther > 0) {
+                            const baseAlloc = Math.floor(allocateFromOther / numNew);
+                            let remAlloc = allocateFromOther - baseAlloc * numNew;
+                            unassignedIndices.forEach(idx => {
+                                const add = baseAlloc + (remAlloc > 0 ? 1 : 0);
+                                state.distributions[idx] = add;
+                                if (remAlloc > 0) remAlloc--;
+                            });
+                        } else {
+                            // no room or nothing to allocate
+                            unassignedIndices.forEach(i => state.distributions[i] = 0);
+                        }
+                        // reduce 'other' by the allocated amount (leftover becomes 30% approx)
+                        state.distributions.other = Math.max(0, preservedOther - allocateFromOther);
+                    } else {
+                        // No preserved 'other' — allocate remaining percentage to unassigned indices evenly
+                        let remaining = Math.max(0, 100 - assignedSum);
+                        if (unassignedIndices.length > 0) {
+                            const baseAlloc = Math.floor(remaining / unassignedIndices.length);
+                            let rem = remaining - baseAlloc * unassignedIndices.length;
+                            unassignedIndices.forEach(idx => {
+                                state.distributions[idx] = baseAlloc + (rem > 0 ? 1 : 0);
+                                if (rem > 0) rem--;
+                            });
+                        }
+                        // Recompute assigned sum and set 'other' to whatever is left
+                        const finalSum = Array.from({ length: count }).reduce((s, _, i) => s + Number(state.distributions[i] || 0), 0);
+                        state.distributions.other = Math.max(0, 100 - finalSum);
+                    }
+                }
+
+                // If distributions sum is off, recompute 'other'
+                computeOtherDistribution();
+            } catch (e) {
+                // if anything goes wrong, fall back to fresh state (non-fatal)
             }
-            state.distributions.other = 0;
+
         } else { // count引数がない場合（初回起動時）は、デフォルトキャラクターを読み込む
             const defaultCount = DEFAULT_CHARACTERS.length;
             state = { charCount: defaultCount, icons: {}, distributions: {}, matchups: {}, otherMatchups: {} };
